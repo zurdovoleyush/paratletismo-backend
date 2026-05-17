@@ -1,0 +1,22 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('institutions/', views.InstitutionListView.as_view(), name='institution_list'),
+    path('institutions/<uuid:pk>/', views.InstitutionDetailView.as_view(), name='institution_detail'),
+    path('institutions/<uuid:pk>/athletes/', views.InstitutionAthletesView.as_view(), name='institution_athletes'),
+    path('institutions/<uuid:pk>/coaches/', views.InstitutionCoachesView.as_view(), name='institution_coaches'),
+    path('institutions/my/', views.MyInstitutionView.as_view(), name='my_institution'),
+    path('institutions/available/', views.AvailableInstitutionsView.as_view(), name='available_institutions'),
+    path('coaches/my/institution/', views.CoachSetInstitutionView.as_view(), name='coach_set_institution'),
+    path('coaches/', views.CoachListView.as_view(), name='coach_list'),
+    path('coaches/<uuid:pk>/', views.CoachDetailView.as_view(), name='coach_detail'),
+    path('athletes/', views.AthleteListView.as_view(), name='athlete_list'),
+    path('athletes/<uuid:pk>/', views.AthleteDetailView.as_view(), name='athlete_detail'),
+    path('athletes/my/', views.MyAthletesView.as_view(), name='my_athletes'),
+    path('tournaments/', views.TournamentListView.as_view(), name='tournament_list'),
+    path('tournaments/<uuid:pk>/', views.TournamentDetailView.as_view(), name='tournament_detail'),
+    path('tournaments/<uuid:pk>/status/', views.TournamentUpdateStatusView.as_view(), name='tournament_status'),
+    path('tournaments/<uuid:pk>/events/', views.TournamentEventsView.as_view(), name='tournament_events'),
+    path('tournament-events/<uuid:pk>/', views.TournamentEventDetailView.as_view(), name='tournament_event_detail'),
+]

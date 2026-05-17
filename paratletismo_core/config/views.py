@@ -1,0 +1,68 @@
+from rest_framework import generics
+from rest_framework.permissions import AllowAny
+from .models import Discipline, Sex, Category, FunctionalClassification, EventType
+from .serializers import DisciplineSerializer, SexSerializer, CategorySerializer, FunctionalClassificationSerializer, EventTypeSerializer
+from paratletismo_core.users.permissions import IsSuperAdmin
+
+
+class PublicListMixin:
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [AllowAny()]
+        return [IsSuperAdmin()]
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DisciplineView(PublicListMixin, generics.ListCreateAPIView):
+    serializer_class = DisciplineSerializer
+    queryset = Discipline.objects.all()
+
+
+class DisciplineDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = DisciplineSerializer
+    queryset = Discipline.objects.all()
+
+
+class SexView(PublicListMixin, generics.ListCreateAPIView):
+    serializer_class = SexSerializer
+    queryset = Sex.objects.all()
+
+
+class SexDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = SexSerializer
+    queryset = Sex.objects.all()
+
+
+class CategoryView(PublicListMixin, generics.ListCreateAPIView):
+    serializer_class = CategorySerializer
+    queryset = Category.objects.all()
+
+
+class CategoryDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = CategorySerializer
+    queryset = Category.objects.all()
+
+
+class FunctionalClassificationView(PublicListMixin, generics.ListCreateAPIView):
+    serializer_class = FunctionalClassificationSerializer
+    queryset = FunctionalClassification.objects.all()
+
+
+class FunctionalClassificationDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = FunctionalClassificationSerializer
+    queryset = FunctionalClassification.objects.all()
+
+
+class EventTypeView(PublicListMixin, generics.ListCreateAPIView):
+    serializer_class = EventTypeSerializer
+    queryset = EventType.objects.all()
+
+
+class EventTypeDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = EventTypeSerializer
+    queryset = EventType.objects.all()
