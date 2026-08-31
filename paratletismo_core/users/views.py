@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.db import IntegrityError
+from django.db.models import Q
 from .models import User, RoleChoices
 from .permissions import IsSuperAdmin
 from .serializers import (
@@ -83,6 +85,9 @@ class UserListView(generics.ListAPIView):
         role = self.request.query_params.get('role')
         if role:
             qs = qs.filter(role=role)
+        q = (self.request.query_params.get('q') or '').strip()
+        if q:
+            qs = qs.filter(Q(last_name__icontains=q) | Q(email__icontains=q))
         return qs
 
 
@@ -100,14 +105,20 @@ class UserCreateView(generics.CreateAPIView):
         if not all([email, password, first_name, last_name, role]):
             return Response({'error': 'Todos los campos son obligatorios'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.create_user(
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            role=role,
-        )
-        return Response(AdminUserSerializer(user).data, status=status.HTTP_201_CREATED)
+        if User.objects.filter(email=email).exists():
+            return Response({'error': 'Ya existe un usuario con este email'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.create_user(
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                role=role,
+            )
+            return Response(AdminUserSerializer(user).data, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            return Response({'error': 'Error al crear el usuario. Verifique los datos.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):

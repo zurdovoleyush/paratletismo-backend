@@ -1,11 +1,14 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from .models import Discipline, Sex, Category, FunctionalClassification, EventType
 from .serializers import DisciplineSerializer, SexSerializer, CategorySerializer, FunctionalClassificationSerializer, EventTypeSerializer
 from paratletismo_core.users.permissions import IsSuperAdmin
 
 
 class PublicListMixin:
+    pagination_class = None
+
     def get_permissions(self):
         if self.request.method == 'GET':
             return [AllowAny()]
@@ -50,7 +53,13 @@ class CategoryDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView)
 
 class FunctionalClassificationView(PublicListMixin, generics.ListCreateAPIView):
     serializer_class = FunctionalClassificationSerializer
-    queryset = FunctionalClassification.objects.all()
+
+    def get_queryset(self):
+        qs = FunctionalClassification.objects.all()
+        discipline = self.request.query_params.get('discipline')
+        if discipline:
+            qs = qs.filter(discipline_id=discipline)
+        return qs
 
 
 class FunctionalClassificationDetailView(PublicListMixin, generics.RetrieveUpdateDestroyAPIView):

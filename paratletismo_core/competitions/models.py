@@ -26,6 +26,9 @@ class Registration(models.Model):
     registered_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='registrations_made')
     registered_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True)
+    medical_certificate = models.FileField(upload_to='registrations/medical/', blank=True, null=True, help_text='Certificado medico apto')
+    payment_receipt = models.FileField(upload_to='registrations/payments/', blank=True, null=True, help_text='Comprobante de pago')
+    rejection_reason = models.TextField(blank=True, help_text='Motivo del rechazo informado al atleta/institucion')
 
     class Meta:
         db_table = 'competitions_registrations'
@@ -77,7 +80,7 @@ class Result(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     athlete_event = models.ForeignKey(AthleteEvent, on_delete=models.CASCADE, related_name='results')
     attempt_number = models.IntegerField()
-    value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='Resultado numerico')
+    value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, help_text='Resultado numerico')
     mark = models.CharField(max_length=100, blank=True, help_text='Marca textual (ej: 1:23.45)')
     is_valid = models.BooleanField(default=True)
     wind = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True, help_text='Velocidad del viento')

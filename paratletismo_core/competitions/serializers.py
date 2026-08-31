@@ -13,7 +13,8 @@ class RegistrationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'tournament', 'tournament_name', 'athlete', 'athlete_name',
             'institution', 'institution_name', 'status', 'payment_status',
-            'registered_by', 'registered_by_name', 'registered_at', 'notes'
+            'registered_by', 'registered_by_name', 'registered_at', 'notes',
+            'medical_certificate', 'payment_receipt', 'rejection_reason',
         ]
         read_only_fields = ['id', 'registered_at']
 
@@ -21,7 +22,41 @@ class RegistrationSerializer(serializers.ModelSerializer):
 class RegistrationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Registration
-        fields = ['tournament', 'athlete', 'notes']
+        fields = ['id', 'tournament', 'athlete', 'notes', 'medical_certificate', 'payment_receipt', 'status']
+        read_only_fields = ['id', 'status']
+
+    def validate(self, data):
+        user = self.context['request'].user
+        athlete = data['athlete']
+        tournament = data['tournament']
+        if not data.get('medical_certificate'):
+            raise serializers.ValidationError({'medical_certificate': 'La ficha medica (certificado medico apto) es obligatoria'})
+        if not data.get('payment_receipt'):
+            raise serializers.ValidationError({'payment_receipt': 'El comprobante de pago es obligatorio'})
+        if tournament.payment_status != 'paid':
+            raise serializers.ValidationError({'tournament': 'El torneo aun no esta habilitado (pendiente de pago)'})
+        if not tournament.is_active:
+            raise serializers.ValidationError({'tournament': 'El torneo esta inactivo y no acepta inscripciones'})
+        from paratletismo_core.tournaments.models import Coach, InstitutionUser
+        if user.role == 'coach':
+            try:
+                coach = Coach.objects.get(user=user)
+                if athlete.coach and athlete.coach.id != coach.id:
+                    raise serializers.ValidationError({'athlete': 'Solo puedes inscribir atletas que tengas asignados como entrenador'})
+                if not athlete.coach:
+                    raise serializers.ValidationError({'athlete': 'Este atleta no tiene un entrenador asignado'})
+            except Coach.DoesNotExist:
+                raise serializers.ValidationError({'athlete': 'No tienes un perfil de entrenador'})
+        elif user.role == 'institution':
+            try:
+                inst_user = InstitutionUser.objects.get(user=user)
+                if athlete.institution and athlete.institution.id != inst_user.institution.id:
+                    raise serializers.ValidationError({'athlete': 'Solo puedes inscribir atletas de tu institucion'})
+                if not athlete.institution:
+                    raise serializers.ValidationError({'athlete': 'Este atleta no pertenece a ninguna institucion'})
+            except InstitutionUser.DoesNotExist:
+                raise serializers.ValidationError({'athlete': 'No tienes una institucion asignada'})
+        return data
 
     def create(self, validated_data):
         athlete = validated_data['athlete']
@@ -39,24 +74,40 @@ class AthleteEventRegistrationSerializer(serializers.Serializer):
         athlete = Athlete.objects.get(id=data['athlete'])
         event = TournamentEvent.objects.get(id=data['tournament_event'])
 
-        if athlete.sex and event.sex and athlete.sex.id != event.sex.id:
-            raise serializers.ValidationError({'athlete': f'El sexo del atleta no corresponde a esta prueba ({event.sex.name} requerido)'})
+        event_sexes = list(event.sexes.all()) if event.sexes.exists() else ([event.sex] if event.sex else [])
+        if athlete.sex and event_sexes and athlete.sex not in event_sexes:
+            sex_names = ', '.join(s.name for s in event_sexes)
+            raise serializers.ValidationError({'athlete': f'El sexo del atleta no corresponde a esta prueba (requerido: {sex_names})'})
 
-        if athlete.sex and event.category:
-            from paratletismo_core.tournaments.models import Category
-            cat = event.category
-            age = athlete.age
-            if cat.min_age and age < cat.min_age:
-                raise serializers.ValidationError({'athlete': f'El atleta no tiene la edad minima para categoria {cat.name} (min {cat.min_age})'})
-            if cat.max_age and age > cat.max_age:
-                raise serializers.ValidationError({'athlete': f'El atleta supera la edad maxima para categoria {cat.name} (max {cat.max_age})'})
+        event_cats = list(event.categories.all()) if event.categories.exists() else ([event.category] if event.category else [])
+        if event_cats:
+            from datetime import date
+            ref_year = event.tournament.tournament_start.year if event.tournament.tournament_start else date.today().year
+            age = athlete.category_age(ref_year)
+            age_ok = False
+            for cat in event_cats:
+                if cat.min_age and age < cat.min_age:
+                    continue
+                if cat.max_age and age > cat.max_age:
+                    continue
+                age_ok = True
+                break
+            if not age_ok:
+                cat_names = ', '.join(c.name for c in event_cats)
+                raise serializers.ValidationError({'athlete': f'La edad del atleta no corresponde a ninguna categoria de esta prueba ({cat_names})'})
 
-        if athlete.functional_classification and event.functional_classification:
-            if athlete.functional_classification.id != event.functional_classification.id:
-                raise serializers.ValidationError({'athlete': f'La clasificacion funcional {athlete.functional_classification.code} no corresponde a esta prueba ({event.functional_classification.code} requerida)'})
-
-        if event.functional_classification and not athlete.functional_classification:
-            raise serializers.ValidationError({'athlete': f'Esta prueba requiere clasificacion funcional {event.functional_classification.code}'})
+        event_fcs = list(event.functional_classifications.all())
+        if not event_fcs and event.functional_classification:
+            event_fcs = [event.functional_classification]
+        if event_fcs:
+            is_track = event.uses_track_classification()
+            athlete_fc = athlete.track_classification if is_track else athlete.field_classification
+            if athlete_fc and athlete_fc not in event_fcs:
+                fc_codes = ', '.join(fc.code for fc in event_fcs)
+                raise serializers.ValidationError({'athlete': f'La clasificacion del atleta ({athlete_fc.code}) no corresponde a esta prueba ({fc_codes})'})
+            if not athlete_fc:
+                fc_codes = ', '.join(fc.code for fc in event_fcs)
+                raise serializers.ValidationError({'athlete': f'Esta prueba requiere clasificacion funcional ({fc_codes})'})
 
         data['athlete_obj'] = athlete
         data['event_obj'] = event
@@ -66,8 +117,13 @@ class AthleteEventRegistrationSerializer(serializers.Serializer):
         athlete = validated_data['athlete_obj']
         event = validated_data['event_obj']
         tournament = event.tournament
+        registration = Registration.objects.filter(
+            athlete=athlete,
+            tournament=tournament,
+            status__in=['approved', 'pending']
+        ).order_by('-registered_at').first()
         athlete_event = AthleteEvent.objects.create(
-            registration_id=validated_data.get('registration_id'),
+            registration=registration,
             tournament_event=event,
             bib_number=None,
             lane=None,
@@ -77,11 +133,19 @@ class AthleteEventRegistrationSerializer(serializers.Serializer):
 
 class AthleteEventSerializer(serializers.ModelSerializer):
     athlete_name = serializers.CharField(source='registration.athlete.user.get_full_name', read_only=True)
+    athlete_id = serializers.UUIDField(source='registration.athlete.id', read_only=True)
     tournament_event_name = serializers.CharField(source='tournament_event.name', read_only=True)
+    institution_name = serializers.CharField(source='registration.institution.name', read_only=True)
+    classification_code = serializers.CharField(source='registration.athlete.functional_classification.code', read_only=True, default=None)
+    track_classification_code = serializers.CharField(source='registration.athlete.track_classification.code', read_only=True, default=None)
+    field_classification_code = serializers.CharField(source='registration.athlete.field_classification.code', read_only=True, default=None)
+    sex_name = serializers.CharField(source='registration.athlete.sex.name', read_only=True, default=None)
+    bib_number = serializers.IntegerField(required=False, allow_null=True)
+    lane = serializers.IntegerField(required=False, allow_null=True)
 
     class Meta:
         model = AthleteEvent
-        fields = ['id', 'registration', 'athlete_name', 'tournament_event', 'tournament_event_name', 'bib_number', 'lane']
+        fields = ['id', 'registration', 'athlete_name', 'athlete_id', 'tournament_event', 'tournament_event_name', 'institution_name', 'classification_code', 'track_classification_code', 'field_classification_code', 'sex_name', 'bib_number', 'lane', 'status']
         read_only_fields = ['id']
 
 
@@ -118,12 +182,32 @@ class FinalResultSerializer(serializers.ModelSerializer):
     tournament_event_name = serializers.CharField(source='tournament_event.name', read_only=True)
     classification = serializers.CharField(source='athlete.functional_classification.code', read_only=True)
     verified_by_name = serializers.CharField(source='verified_by.get_full_name', read_only=True)
+    tournament_name = serializers.CharField(source='tournament_event.tournament.name', read_only=True)
+    tournament_city = serializers.CharField(source='tournament_event.tournament.city', read_only=True)
+    scheduled_date = serializers.DateTimeField(source='tournament_event.scheduled_date', read_only=True)
+    event_type_name = serializers.CharField(source='tournament_event.event_type.name', read_only=True)
+    is_track = serializers.SerializerMethodField()
+    wind = serializers.SerializerMethodField()
+
+    def get_is_track(self, obj):
+        return bool(obj.tournament_event.event_type and obj.tournament_event.event_type.is_time_based)
+
+    def get_wind(self, obj):
+        ae = obj.tournament_event.athlete_events.filter(
+            registration__athlete=obj.athlete,
+            status='confirmed',
+        ).first()
+        if ae is None:
+            return None
+        res = ae.results.filter(attempt_number=1).first()
+        return res.wind if res and res.wind is not None else None
 
     class Meta:
         model = FinalResult
         fields = [
-            'id', 'tournament_event', 'tournament_event_name', 'athlete', 'athlete_name',
+            'id', 'tournament_event', 'tournament_event_name', 'tournament_name', 'tournament_city',
+            'scheduled_date', 'event_type_name', 'is_track', 'athlete', 'athlete_name',
             'classification', 'rank', 'best_mark', 'points', 'record_type',
-            'is_dnf', 'is_dns', 'is_dq', 'verified_by', 'verified_by_name', 'verified_at'
+            'is_dnf', 'is_dns', 'is_dq', 'verified_by', 'verified_by_name', 'verified_at', 'wind'
         ]
         read_only_fields = ['id', 'verified_at']

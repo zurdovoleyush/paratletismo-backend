@@ -50,3 +50,14 @@ class IsJudgeOrHeadJudge(permissions.BasePermission):
 class IsAdminOrSuperAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role in [RoleChoices.ADMIN, RoleChoices.SUPERADMIN]
+
+
+class CanOrganizeTournament(permissions.BasePermission):
+    """Permite crear torneos a usuarios habilitados sin depender de instituciones (que ahora son opcionales)."""
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        if user.role in (RoleChoices.SUPERADMIN, RoleChoices.ADMIN, RoleChoices.INSTITUTION, RoleChoices.COACH):
+            return True
+        return user.is_superuser
