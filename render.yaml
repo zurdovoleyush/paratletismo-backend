@@ -1,3 +1,5 @@
+name: paratletismo
+
 services:
   - type: web
     name: paratletismo-backend
