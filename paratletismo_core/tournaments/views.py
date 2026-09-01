@@ -564,6 +564,7 @@ class InstitutionManageView(generics.ListAPIView):
     """Superadmin: listar todas las instituciones con permisos de organizador."""
     serializer_class = InstitutionManageSerializer
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+    pagination_class = None
 
     def get_queryset(self):
         qs = Institution.objects.all().order_by('name')
