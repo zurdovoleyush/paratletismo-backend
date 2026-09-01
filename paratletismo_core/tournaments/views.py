@@ -571,6 +571,10 @@ class InstitutionManageView(generics.ListAPIView):
         show_all = self.request.query_params.get('show_all', '').lower() in ('true', '1', 'yes')
         if not show_all:
             qs = qs.filter(is_active=True)
+        q = (self.request.query_params.get('q') or '').strip()
+        if q:
+            from django.db.models import Q
+            qs = qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
         return qs
 
 
