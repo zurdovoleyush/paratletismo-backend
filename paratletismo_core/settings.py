@@ -120,8 +120,11 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://localhost:3000'
+    default='https://paratletismo-frontend.pages.dev,http://localhost:5173,http://localhost:3000'
 ).split(',')
+
+if 'https://paratletismo-frontend.pages.dev' not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append('https://paratletismo-frontend.pages.dev')
 
 CORS_ALLOW_CREDENTIALS = True
 
