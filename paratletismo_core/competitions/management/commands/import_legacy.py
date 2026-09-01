@@ -352,7 +352,7 @@ class Command(BaseCommand):
                     'phone': self._dato(fila, 'telefono') or '',
                     'email': self._dato(fila, 'email') or '',
                     'is_active': True,
-                    'can_organize': True,
+                    'can_organize': False,
                 })
             instituciones[norm_key(inst.name)] = inst
             if created:
