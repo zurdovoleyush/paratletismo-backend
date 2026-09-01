@@ -101,11 +101,22 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
+    can_organize = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'role', 'role_display', 'is_active', 'date_joined', 'avatar']
+        fields = ['id', 'email', 'first_name', 'last_name', 'phone', 'role', 'role_display', 'is_active', 'date_joined', 'avatar', 'can_organize']
         read_only_fields = ['id', 'date_joined']
+
+    def get_can_organize(self, obj):
+        if obj.role != 'institution':
+            return None
+        try:
+            from paratletismo_core.tournaments.models import InstitutionUser
+            iu = InstitutionUser.objects.filter(user=obj).first()
+            return bool(iu.institution.can_organize)
+        except Exception:
+            return False
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

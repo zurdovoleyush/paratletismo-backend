@@ -53,11 +53,17 @@ class IsAdminOrSuperAdmin(permissions.BasePermission):
 
 
 class CanOrganizeTournament(permissions.BasePermission):
-    """Permite crear torneos a usuarios habilitados sin depender de instituciones (que ahora son opcionales)."""
+    """Solo permite crear torneos si el usuario tiene permiso activo."""
     def has_permission(self, request, view):
         user = request.user
         if not user.is_authenticated:
             return False
-        if user.role in (RoleChoices.SUPERADMIN, RoleChoices.ADMIN, RoleChoices.INSTITUTION, RoleChoices.COACH):
+        if user.role in (RoleChoices.SUPERADMIN, RoleChoices.ADMIN):
             return True
+        if user.role == RoleChoices.COACH:
+            return True
+        if user.role == RoleChoices.INSTITUTION:
+            from paratletismo_core.tournaments.models import InstitutionUser
+            iu = InstitutionUser.objects.filter(user=user).first()
+            return iu is not None and iu.institution.can_organize
         return user.is_superuser
