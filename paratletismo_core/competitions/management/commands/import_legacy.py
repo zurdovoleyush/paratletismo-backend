@@ -297,6 +297,34 @@ class Command(BaseCommand):
                 return v
         return None
 
+    def _resolver_clasificacion(self, label):
+        """Devuelve (track_fc, field_fc, generic_fc) para asignar al atleta.
+
+        La planilla puede traer clasificacion solo con el numero (ej '20') o con
+        letra ('T20'/'F20'). Cuando viene solo el numero no se sabe si es de pista
+        (T) o campo (F), asi que se completan AMBAS clasificaciones (track y field)
+        para que la pagina publica resuelva segun el tipo de prueba. El campo
+        generico se completa solo si la letra es explicita."""
+        label = str(label or '').strip().upper()
+        if not label:
+            return (None, None, None)
+        import re as _re
+        m = _re.fullmatch(r'([TF])?(\d+)', label)
+        prefijo = m.group(1) if m else None
+        numero = m.group(2) if m else None
+        def _por_codigo(code):
+            return FunctionalClassification.objects.filter(code__iexact=code).first()
+        if prefijo:
+            exact = _por_codigo(label)
+            if prefijo == 'T':
+                return (exact, None, exact)
+            return (None, exact, exact)
+        if numero:
+            track_fc = _por_codigo('T' + numero)
+            field_fc = _por_codigo('F' + numero)
+            return (track_fc, field_fc, None)
+        return (None, None, None)
+
     def _match_institucion(self, nombre, instituciones, instituciones_sigla):
         texto = str(nombre or '').strip()
         if not texto or norm_key(texto) in ('sin_institucion', 'sin_datos', 'sin_datos_para_mostrar', 'ninguna', '_', 's_d', 'sd', 's_n'):
@@ -434,7 +462,7 @@ class Command(BaseCommand):
             inst_name = self._dato(fila, 'institucion')
             institution = self._match_institucion(inst_name, instituciones, instituciones_sigla)
             sexo = resolve_sex(self._dato(fila, 'sexo'))
-            clasif = resolve_classification(self._dato(fila, 'clasificacion'))
+            track_fc, field_fc, generic_fc = self._resolver_clasificacion(self._dato(fila, 'clasificacion'))
             athlete = Athlete.objects.create(
                 user=user,
                 institution=institution,
@@ -442,7 +470,9 @@ class Command(BaseCommand):
                 document_number=doc,
                 date_of_birth=to_date(self._dato(fila, 'fecha_nacimiento')),
                 sex=sexo,
-                functional_classification=clasif,
+                functional_classification=generic_fc,
+                track_classification=track_fc,
+                field_classification=field_fc,
                 phone=self._dato(fila, 'telefono') or '',
             )
             atletas_por_dni[clave_dni] = athlete
