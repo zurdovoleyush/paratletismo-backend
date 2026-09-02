@@ -94,6 +94,26 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Almacenamiento de archivos (avatars, logos, CUD, comprobantes).
+# Por defecto se guardan en disco local (MEDIA_ROOT). Para persistir en
+# Cloudflare R2 entre redeploys, activar USE_R2=True y definir las credenciales.
+if config('USE_R2', default=False, cast=bool):
+    STORAGES = {
+        'default': {'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage'},
+        'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+    }
+    AWS_ACCESS_KEY_ID = config('R2_ACCESS_KEY_ID', default='')
+    AWS_SECRET_ACCESS_KEY = config('R2_SECRET_ACCESS_KEY', default='')
+    AWS_STORAGE_BUCKET_NAME = config('R2_BUCKET_NAME', default='')
+    AWS_S3_ENDPOINT_URL = config('R2_ENDPOINT_URL', default='https://<accountid>.r2.cloudflarestorage.com')
+    AWS_S3_CUSTOM_DOMAIN = config('R2_PUBLIC_DOMAIN', default='')
+    AWS_S3_ADDRESSING_STYLE = 'virtual'
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_DEFAULT_ACL = 'public-read'
+    AWS_QUERYSTRING_AUTH = False
+    if AWS_S3_CUSTOM_DOMAIN:
+        AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.User'

@@ -180,7 +180,7 @@ class ResultSerializer(serializers.ModelSerializer):
 class FinalResultSerializer(serializers.ModelSerializer):
     athlete_name = serializers.CharField(source='athlete.user.get_full_name', read_only=True)
     tournament_event_name = serializers.CharField(source='tournament_event.name', read_only=True)
-    classification = serializers.CharField(source='athlete.functional_classification.code', read_only=True)
+    classification = serializers.SerializerMethodField()
     verified_by_name = serializers.CharField(source='verified_by.get_full_name', read_only=True)
     tournament_name = serializers.CharField(source='tournament_event.tournament.name', read_only=True)
     tournament_city = serializers.CharField(source='tournament_event.tournament.city', read_only=True)
@@ -191,6 +191,18 @@ class FinalResultSerializer(serializers.ModelSerializer):
 
     def get_is_track(self, obj):
         return bool(obj.tournament_event.event_type and obj.tournament_event.event_type.is_time_based)
+
+    def get_classification(self, obj):
+        """Clasificacion funcional segun el tipo de prueba: pista (T) usa track_classification,
+        campo (F) usa field_classification; si no hay, cae a functional_classification."""
+        a = obj.athlete
+        if a is None:
+            return None
+        if self.get_is_track(obj):
+            fc = a.track_classification or a.functional_classification
+        else:
+            fc = a.field_classification or a.functional_classification
+        return fc.code if fc else None
 
     def get_wind(self, obj):
         ae = obj.tournament_event.athlete_events.filter(

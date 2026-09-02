@@ -325,7 +325,7 @@ class Command(BaseCommand):
         return None
 
     def _reporte(self, nombre, creados, omitidos, errores):
-        self.stdout.write(f'\n[{nombre}] creados: {creados}, omitidos (ya existian): {omitidos}, errores: {len(errores)}')
+        self.stdout.write(f'\n[{nombre}] creados: {creados}, existentes (no duplicados): {omitidos}, errores: {len(errores)}')
         for e in errores[:20]:
             self.stdout.write(self.style.WARNING(f'  - {e}'))
 
@@ -392,23 +392,20 @@ class Command(BaseCommand):
                 continue
             if Athlete.objects.filter(document_number=doc).exists():
                 athlete = Athlete.objects.get(document_number=doc)
-                # actualiza datos faltantes del atleta ya existente (clasificacion, sexo, institucion)
+                # Se identifican por DNI. Cuando el atleta YA existe, solo se CORRIGE la
+                # identificacion (nombre/apellido) que vinieron mal escritos en la planilla.
+                # El resto de campos (fecha de nacimiento, telefono, clasificacion, sexo,
+                # institucion, etc.) NO se tocan para no pisar datos sensibles o cargados a mano.
+                # El nombre/apellido se guarda en el User asociado al atleta, no en Athlete.
                 actualizado = False
-                clasif = resolve_classification(self._dato(fila, 'clasificacion'))
-                if clasif and athlete.functional_classification_id != clasif.id:
-                    athlete.functional_classification = clasif
-                    actualizado = True
-                sexo = resolve_sex(self._dato(fila, 'sexo'))
-                if sexo and athlete.sex_id != sexo.id:
-                    athlete.sex = sexo
-                    actualizado = True
-                inst_name = self._dato(fila, 'institucion')
-                inst = self._match_institucion(inst_name, instituciones, instituciones_sigla)
-                if inst and athlete.institution_id is None:
-                    athlete.institution = inst
-                    actualizado = True
-                if actualizado:
-                    athlete.save()
+                if athlete.user:
+                    for fld, val in (('first_name', str(nombre)), ('last_name', str(apellido))):
+                        v = val.strip()
+                        if v and getattr(athlete.user, fld) != v:
+                            setattr(athlete.user, fld, v)
+                            actualizado = True
+                    if actualizado:
+                        athlete.user.save()
                 atletas_por_dni[clave_dni] = athlete
                 atletas_por_email[norm_key(athlete.user.email)] = athlete
                 emails_usados.add(norm_key(athlete.user.email))
@@ -471,6 +468,7 @@ class Command(BaseCommand):
                 fecha_fin = fecha_ini + timedelta(days=1)
             if Tournament.objects.filter(name=str(nombre)).exists():
                 t0 = Tournament.objects.get(name=str(nombre))
+                # solo se actualizan las fechas si la planilla las trae (comportamiento original)
                 if self._dato(fila, 'fecha_inicio') not in (None, ''):
                     Tournament.objects.filter(id=t0.id).update(
                         tournament_start=fecha_ini,
@@ -672,8 +670,13 @@ class Command(BaseCommand):
             [''],
             ['VALIDACIONES'],
             ['- Las hojas se buscan por nombre (el orden no importa).'],
-            ['- Torneo si ya existe => se omite. Atleta se identifica por DOCUMENTO/DNI (unico por atleta): si el'],
-            ['  DNI ya existe, se omite (no se duplica). En RESULTADOS el atleta se referencia por atleta_dni.'],
+            ['- Atleta se identifica por DOCUMENTO/DNI (unico por atleta). Si el DNI ya existe,'],
+            ['  se CORRIGE solo el nombre/apellido mal escritos de la planilla; los demas datos'],
+            ['  (fecha nac, telefono, clasificacion, sexo, institucion) NO se modifican.'],
+            ['  Asi podes corregir nombres equivocados o apellidos duplicados en el Excel y'],
+            ['  propagarlos a la web al volver a importar.'],
+            ['- Torneo si ya existe: se omite (no se duplica). Se actualizan fechas si vienen.'],
+            ['- Instituto si ya existe: se omite (no se duplica). Nuevo entra DESHABILITADO.'],
             ['- EMAIL OPCIONAL en Atletas: si lo dejas vacio el sistema genera uno automatico a partir del DNI'],
             ['  (ej: dni30123456@import.local). Asi los menores que no tienen correo propio no necesitan uno:'],
             ['  pueden compartir el email del padre o dejarlo vacio; el sistema nunca mezcla atletas porque'],
