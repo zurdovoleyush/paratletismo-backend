@@ -190,7 +190,8 @@ class FinalResultSerializer(serializers.ModelSerializer):
     wind = serializers.SerializerMethodField()
 
     def get_is_track(self, obj):
-        return bool(obj.tournament_event.event_type and obj.tournament_event.event_type.is_time_based)
+        et = obj.tournament_event.event_type if obj.tournament_event else None
+        return bool(et and (et.is_time_based or (et.name or '').strip().lower().startswith('salto')))
 
     def get_classification(self, obj):
         """Clasificacion funcional segun el tipo de prueba: pista (T) usa track_classification,

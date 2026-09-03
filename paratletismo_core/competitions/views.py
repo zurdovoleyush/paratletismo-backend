@@ -787,6 +787,12 @@ class AthletePublicHistoryView(APIView):
         })
 
 
+def _es_salto(et):
+    """Una prueba de salto (Salto Largo / Salto Alto) muestra clasificacion T,
+    segun la convencion internacional del World Para Athletics."""
+    return bool(et and (et.name or '').strip().lower().startswith('salto'))
+
+
 def _records_compute(limit=3, filters=None):
     """Mejores marcas por (tipo de prueba, sexo, categoria, clasificacion) y torneo.
 
@@ -837,6 +843,7 @@ def _records_compute(limit=3, filters=None):
                 'sex_name': te.sex.name if te.sex else '',
                 'category_name': te.category.name if te.category else '',
                 'is_time_based': bool(et.is_time_based),
+                'is_track': bool(et.is_time_based or _es_salto(et)),
                 'unit': et.unit or 'segundos',
                 'direction': direction,
                 'codes': {code} if code else set(),
@@ -886,6 +893,7 @@ def _records_compute(limit=3, filters=None):
             'sex_name': meta['sex_name'] or 'Mixto',
             'category_name': meta['category_name'] or 'Sin categoria',
             'is_time_based': meta['is_time_based'],
+            'is_track': meta['is_track'],
             'unit': meta['unit'],
             'class_codes': sorted(meta['codes']),
             'total': len(ordered),
@@ -893,7 +901,7 @@ def _records_compute(limit=3, filters=None):
         })
 
     options = {
-        'disciplines': sorted({(g['discipline_name'], g['discipline_id']) for g in all_groups}, key=lambda x: (x[0] or '').lower()),
+        'disciplines': sorted({(g['event_type_name'], g['event_type_id']) for g in all_groups}, key=lambda x: (x[0] or '').lower()),
         'sexes': sorted({g['sex_name'] for g in all_groups}),
         'categories': sorted({g['category_name'] for g in all_groups}, key=lambda x: x.lower()),
         'classifications': sorted({c for g in all_groups for c in g['class_codes']}),
@@ -906,7 +914,7 @@ def _records_compute(limit=3, filters=None):
 
     selected = []
     for g in all_groups:
-        if f_discipline not in ('', 'all') and f_discipline not in (g['discipline_name'].lower(), g['discipline_id'].lower()):
+        if f_discipline not in ('', 'all') and f_discipline not in (g['event_type_name'].lower(), g['event_type_id'].lower()):
             continue
         if f_sex not in ('', 'all') and f_sex != g['sex_name'].lower():
             continue
