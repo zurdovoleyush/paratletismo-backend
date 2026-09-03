@@ -703,7 +703,7 @@ class TournamentPublicResultsView(generics.GenericAPIView):
                 'category_name': event.category.name if event.category else 'Multiple',
                 'scheduled_date': event.scheduled_date,
                 'status': event.status,
-                'is_track': bool(event.event_type and event.event_type.is_time_based),
+                'is_track': bool(event.event_type and (event.event_type.is_time_based or (event.event_type.name or '').strip().lower().startswith('salto'))),
                 'functional_classifications': list(event.functional_classifications.values_list('code', flat=True)),
                 'final_results': FinalResultSerializer(
                     event.final_results.all().order_by('rank'), many=True
@@ -767,7 +767,7 @@ class AthletePublicHistoryView(APIView):
                 'event_type_name': te.event_type.name if te.event_type else '',
                 'sex_name': te.sex.name if te.sex else '',
                 'category_name': te.category.name if te.category else '',
-                'is_track': bool(te.event_type and te.event_type.is_time_based),
+                'is_track': bool(te.event_type and (te.event_type.is_time_based or (te.event_type.name or '').strip().lower().startswith('salto'))),
                 'rank': fr.rank,
                 'best_mark': fr.best_mark,
                 'points': fr.points,
