@@ -788,7 +788,11 @@ class AthletePublicHistoryView(APIView):
 
 
 def _records_compute(limit=3, filters=None):
-    """Top marcas por (tipo de prueba, sexo, categoria, clasificacion) en torneos publicos."""
+    """Mejores marcas por (tipo de prueba, sexo, categoria, clasificacion) y torneo.
+
+    Se conserva la mejor marca de cada atleta por prueba y torneo, de modo que un
+    mismo atleta que fue el mejor en varios torneos figura una vez por cada torneo
+    donde su marca es la mejor de ese torneo."""
     filters = filters or {}
     qs = (
         Result.objects
@@ -841,7 +845,7 @@ def _records_compute(limit=3, filters=None):
             if code:
                 key_meta[key]['codes'].add(code)
 
-        bkey = (key, str(athlete.id))
+        bkey = (key, str(te.tournament_id) if te.tournament_id else '')
         cand = {
             'value': val,
             'mark': r.mark,
