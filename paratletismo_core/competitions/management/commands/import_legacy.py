@@ -297,33 +297,65 @@ class Command(BaseCommand):
                 return v
         return None
 
-    def _resolver_clasificacion(self, label):
-        """Devuelve (track_fc, field_fc, generic_fc) para asignar al atleta.
-
-        La planilla puede traer clasificacion solo con el numero (ej '20') o con
-        letra ('T20'/'F20'). Cuando viene solo el numero no se sabe si es de pista
-        (T) o campo (F), asi que se completan AMBAS clasificaciones (track y field)
-        para que la pagina publica resuelva segun el tipo de prueba. El campo
-        generico se completa solo si la letra es explicita."""
+    def _resolve_class_code(self, label, prefijo_preferido):
+        """Resuelve un label de clasificacion (ej '20', 'T20', 'F20') a su
+        FunctionalClassification. Si viene solo numero usa el prefijo indicado (T/F)
+        para desambiguar. Si trae letra propia, respeta esa letra."""
         label = str(label or '').strip().upper()
         if not label:
-            return (None, None, None)
+            return None
         import re as _re
         m = _re.fullmatch(r'([TF])?(\d+)', label)
-        prefijo = m.group(1) if m else None
-        numero = m.group(2) if m else None
-        def _por_codigo(code):
-            return FunctionalClassification.objects.filter(code__iexact=code).first()
-        if prefijo:
-            exact = _por_codigo(label)
-            if prefijo == 'T':
-                return (exact, None, exact)
-            return (None, exact, exact)
-        if numero:
-            track_fc = _por_codigo('T' + numero)
-            field_fc = _por_codigo('F' + numero)
-            return (track_fc, field_fc, None)
-        return (None, None, None)
+        if not m:
+            return None
+        letra = m.group(1) or prefijo_preferido
+        numero = m.group(2)
+        code = (letra or '') + numero
+        return FunctionalClassification.objects.filter(code__iexact=code).first()
+
+    def _resolver_clasificacion(self, label_track, label_field=None):
+        """Devuelve (track_fc, field_fc, generic_fc) para asignar al atleta.
+
+        Soporta DOS columnas independientes: clasificacion_track (pista, T) y
+        clasificacion_field (campo, F), cubriendo atletas cuya clasificacion de pista
+        difiere de la de campo. Si solo se pasa la columna unica 'clasificacion'
+        (label_field is None) mantiene el comportamiento previo:
+          - sin letra (ej '20') auto-completa track T20 y field F20,
+          - con letra (ej 'T20') completa solo el campo de esa letra."""
+        import re as _re
+        def _code(label, prefijo):
+            label = str(label or '').strip().upper()
+            if not label:
+                return None
+            m = _re.fullmatch(r'([TF])?(\d+)', label)
+            if not m:
+                return None
+            letra = m.group(1) or prefijo
+            return FunctionalClassification.objects.filter(code__iexact=(letra or '') + m.group(2)).first()
+
+        if label_field is not None:
+            # Dos columnas: cada valor va a su campo.
+            track_fc = _code(label_track, 'T')
+            field_fc = _code(label_field, 'F')
+            generic_fc = track_fc or field_fc
+            return (track_fc, field_fc, generic_fc)
+
+        # Columna unica (compatibilidad).
+        label = str(label_track or '').strip().upper()
+        if not label:
+            return (None, None, None)
+        m = _re.fullmatch(r'([TF])?(\d+)', label)
+        if m and m.group(1):
+            # letra explicita
+            if m.group(1) == 'T':
+                fc = _code(label, 'T')
+                return (fc, None, fc)
+            fc = _code(label, 'F')
+            return (None, fc, fc)
+        # numero sin letra: completa ambas (T y F)
+        track_fc = _code(label, 'T')
+        field_fc = _code(label, 'F')
+        return (track_fc, field_fc, None)
 
     def _match_institucion(self, nombre, instituciones, instituciones_sigla):
         texto = str(nombre or '').strip()
@@ -462,7 +494,9 @@ class Command(BaseCommand):
             inst_name = self._dato(fila, 'institucion')
             institution = self._match_institucion(inst_name, instituciones, instituciones_sigla)
             sexo = resolve_sex(self._dato(fila, 'sexo'))
-            track_fc, field_fc, generic_fc = self._resolver_clasificacion(self._dato(fila, 'clasificacion'))
+            track_fc, field_fc, generic_fc = self._resolver_clasificacion(
+                self._dato(fila, 'clasificacion_track', 'clasificacion'),
+                self._dato(fila, 'clasificacion_field'))
             athlete = Athlete.objects.create(
                 user=user,
                 institution=institution,
@@ -712,7 +746,9 @@ class Command(BaseCommand):
             ['  pueden compartir el email del padre o dejarlo vacio; el sistema nunca mezcla atletas porque'],
             ['  la identificacion es por DNI.'],
             ['- Referencias por nombre exacto: tipo de prueba (ej: "100 mts"), categoria (ej: "Mayor"),'],
-            ['  clasificacion funcional (ej: "T12" o "F57"), sexo ("Masculino"/"Femenino").'],
+            ['  clasificacion funcional (ej: "T12" o "F57" - pueden separarse en pista/campo con las'],
+            ['  columnas clasificacion_track y clasificacion_field si un atleta tiene distinta T y F),'],
+            ['  sexo ("Masculino"/"Femenino").'],
             ['- INSTITUCIONES: opcionales y nunca generan error. Se buscan por nombre o sigla, sin acentos y'],
             ['  tolerando variaciones del nombre (ej: "Estrella del Sur" = "Club Atletico Estrella del Sur").'],
             ['  Si falta la columna, esta vacia o el nombre no se encuentra, el atleta/torneo queda SIN'],
@@ -741,7 +777,7 @@ class Command(BaseCommand):
         write_sheet(wb.create_sheet('Instituciones'), instituciones[0], instituciones[1:], [34, 10, 20, 16, 18, 34])
 
         atletas = [
-            ['documento', 'email', 'nombre', 'apellido', 'fecha_nacimiento', 'sexo', 'clasificacion', 'institucion'],
+            ['documento', 'email', 'nombre', 'apellido', 'fecha_nacimiento', 'sexo', 'clasificacion_track', 'clasificacion_field', 'institucion'],
             ['30123456', 'juan.perez@demo.com', 'Juan', 'Perez', '1998-06-15', 'Masculino', 'T12', 'Club Atletico Estrella del Sur'],
             ['30678901', 'luis.romero@demo.com', 'Luis', 'Romero', '1997-05-25', 'Masculino', 'T12', 'Club Atletico Estrella del Sur'],
             ['31123456', 'camila.vega@demo.com', 'Camila', 'Vega', '1998-02-28', 'Femenino', 'T12', 'Federacion Deportiva Provinciana'],

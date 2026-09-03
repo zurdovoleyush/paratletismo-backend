@@ -194,16 +194,23 @@ class FinalResultSerializer(serializers.ModelSerializer):
         return bool(et and (et.is_time_based or (et.name or '').strip().lower().startswith('salto')))
 
     def get_classification(self, obj):
-        """Clasificacion funcional segun el tipo de prueba: pista (T) usa track_classification,
-        campo (F) usa field_classification; si no hay, cae a functional_classification."""
+        """Clasificacion funcional segun el tipo de prueba: pista/salto (T) usa
+        track_classification y campo (F) usa field_classification, con fallback al
+        functional_classification. El codigo se normaliza a la letra correcta (T/F)
+        segun el tipo de prueba para que coincida con la solapa Records."""
         a = obj.athlete
         if a is None:
             return None
-        if self.get_is_track(obj):
-            fc = a.track_classification or a.functional_classification
-        else:
-            fc = a.field_classification or a.functional_classification
-        return fc.code if fc else None
+        is_track = self.get_is_track(obj)
+        fc = (a.track_classification if is_track else a.field_classification) or a.functional_classification
+        code = fc.code if fc else None
+        if code:
+            code = code.upper()
+            if is_track and code.startswith('F') and len(code) > 1:
+                code = 'T' + code[1:]
+            elif not is_track and code.startswith('T') and len(code) > 1:
+                code = 'F' + code[1:]
+        return code
 
     def get_wind(self, obj):
         ae = obj.tournament_event.athlete_events.filter(
