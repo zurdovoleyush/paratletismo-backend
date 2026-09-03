@@ -793,12 +793,27 @@ def _es_salto(et):
     return bool(et and (et.name or '').strip().lower().startswith('salto'))
 
 
+def _normalize_class(code, is_track):
+    """Devuelve el codigo de clasificacion con la letra correcta (T para pista/salto,
+    F para lanzamientos). El dato suele guardarse como F/demasia (campo) o con la
+    letra original; aqui se uniforma para que filtros y etiquetas coincidan."""
+    code = (code or '').upper()
+    if not code:
+        return code
+    if is_track and code.startswith('F') and len(code) > 1:
+        return 'T' + code[1:]
+    if not is_track and code.startswith('T') and len(code) > 1:
+        return 'F' + code[1:]
+    return code
+
+
 def _records_compute(limit=3, filters=None):
     """Mejores marcas por (tipo de prueba, sexo, categoria, clasificacion) y torneo.
 
-    Se conserva la mejor marca de cada atleta por prueba y torneo, de modo que un
-    mismo atleta que fue el mejor en varios torneos figura una vez por cada torneo
-    donde su marca es la mejor de ese torneo."""
+    Se conserva la mejor marca de cada atleta por prueba y torneo, de modo que:
+    - atletas distintos en la misma prueba y torneo figurar todos (se muestra el top),
+    - un mismo atleta que fue el mejor en varios torneos figura una vez por cada
+      torneo donde su marca es la mejor de ese torneo."""
     filters = filters or {}
     qs = (
         Result.objects
@@ -829,9 +844,11 @@ def _records_compute(limit=3, filters=None):
         val = float(r.value)
         athlete = r.athlete_event.registration.athlete
         direction = 'min' if et.is_time_based else 'max'
+        is_track = bool(et.is_time_based or _es_salto(et))
         ev_code = te.functional_classification.code if te.functional_classification else ''
         ath_code = athlete.functional_classification.code if athlete.functional_classification else ''
-        code = ((ev_code or ath_code) or '').upper()
+        raw = ((ev_code or ath_code) or '').upper()
+        code = _normalize_class(raw, is_track)
         key = (str(et.id), str(te.sex_id or ''), str(te.category_id or ''), code)
 
         if key not in key_meta:
@@ -843,7 +860,7 @@ def _records_compute(limit=3, filters=None):
                 'sex_name': te.sex.name if te.sex else '',
                 'category_name': te.category.name if te.category else '',
                 'is_time_based': bool(et.is_time_based),
-                'is_track': bool(et.is_time_based or _es_salto(et)),
+                'is_track': is_track,
                 'unit': et.unit or 'segundos',
                 'direction': direction,
                 'codes': {code} if code else set(),
@@ -852,7 +869,7 @@ def _records_compute(limit=3, filters=None):
             if code:
                 key_meta[key]['codes'].add(code)
 
-        bkey = (key, str(te.tournament_id) if te.tournament_id else '')
+        bkey = (key, str(athlete.id), str(te.tournament_id) if te.tournament_id else '')
         cand = {
             'value': val,
             'mark': r.mark,
@@ -860,7 +877,7 @@ def _records_compute(limit=3, filters=None):
             'athlete_id': str(athlete.id),
             'athlete_name': athlete.user.get_full_name() or athlete.user.email,
             'institution': athlete.institution.name if athlete.institution else '',
-            'classification': ath_code.upper(),
+            'classification': _normalize_class(ath_code, is_track),
             'event_id': str(te.id),
             'event_name': te.name,
             'tournament_name': te.tournament.name,
@@ -875,7 +892,7 @@ def _records_compute(limit=3, filters=None):
                 best_map[bkey] = cand
 
     by_key = {}
-    for (key, _aid), b in best_map.items():
+    for (key, _aid, _tid), b in best_map.items():
         by_key.setdefault(key, []).append(b)
 
     all_groups = []
